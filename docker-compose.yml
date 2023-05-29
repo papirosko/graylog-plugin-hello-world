@@ -1,0 +1,73 @@
+version: '2'
+services:
+  # MongoDB: https://hub.docker.com/_/mongo/
+  mongodb: # Mongodb service
+    image: mongo:5 # Version of Mongodb docker image
+    volumes:
+      - mongo_data:/data/db # Persisted mongodb data
+
+  # https://opensearch.org/docs/latest/install-and-configure/install-opensearch/docker/
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    volumes:
+      - os_data:/usr/share/opensearch/data # Persisted elasticsearch data
+    environment:
+      - bootstrap.memory_lock=true # Disable JVM heap memory swapping
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" # Set min and max JVM heap sizes to at least 50% of system RAM
+    ulimits:
+      memlock:
+        soft: -1 # Set memlock to unlimited (no soft or hard limit)
+        hard: -1
+      nofile:
+        soft: 65536 # Maximum number of open files for the opensearch user - set to at least 65536
+        hard: 65536
+    ports:
+      - 9200:9200 # REST API
+      - 9600:9600 # Performance Analyzer
+
+
+  # Graylog: https://hub.docker.com/r/graylog/graylog/
+  graylog:
+    image: graylog/graylog:5.1.0 # Version of Graylog docker image
+    volumes:
+      - graylog_data:/usr/share/graylog/data # Persisted Graylog data
+      - ./graylog/plugin/:/usr/share/graylog/plugin
+    environment:
+      # CHANGE ME (must be at least 16 characters)!
+      - GRAYLOG_PASSWORD_SECRET=asdasd12dasasasads332dwqdasdasdqq3
+      # Password: admin
+      - GRAYLOG_ROOT_PASSWORD_SHA2=65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://127.0.0.1:9000/
+      - GRAYLOG_WEB_ENDPOINT_URI=http://127.0.0.1:9000/api
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch:9200
+    # Command to run as soon as components are started
+    entrypoint: /usr/bin/tini -- wait-for-it opensearch:9200 --  /docker-entrypoint.sh
+    # Containers that Graylog depends on
+    links:
+      - mongodb:mongo
+      - opensearch
+    restart: always # Graylog container set to always restart when stopped
+    depends_on:
+      - mongodb
+      - opensearch
+    ports:
+      # Graylog web interface and REST API
+      - "9000:9000"
+      # Syslog TCP
+      - "1514:1514"
+      # Syslog UDP
+      - "1514:1514/udp"
+      # GELF TCP
+      - "12201:12201"
+      # GELF UDP
+      - "12201:12201/udp"
+# Volumes for persisting data, see https://docs.docker.com/engine/admin/volumes/volumes/
+volumes:
+  mongo_data:
+    driver: local
+  os_data:
+    driver: local
+  graylog_data:
+    driver: local
